@@ -32,16 +32,33 @@ class Probe():
         self.constructor_id = constructor_id
         self.temp = temp
 
-# register your probes here in this format: Pobe("choose a name of probe", IDX, "constructor_id")
-# it could look like this: Probe("living room", 79, "28-80000026b0d0")
 probes = [
-
+    Probe("salon", 79, "28-80000026b0d0"),
+    Probe("chambre1", 80, "28-80000026c0ee"),
+    Probe("chambre2", 81, "28-80000026a7a5")
 ]
-
+"""
+probes = [
+	Probe("cuisine", 75, "28-8000000859cf"),
+	Probe("cellier", 76, "28-80000026a7d4"),
+	Probe("couloir", 77, "28-80000026c380"),
+	Probe("salle de bain", 78, "28-8000000859bd")
+]
+"""
 
 # obviously this part is about your Domoticz server, not the server where this progam is running
-domoticz_server_address = ""
-domoticz_server_port = ""
+domoticz_server_address = "192.168.1.20"
+domoticz_server_port = "8080"
+
+security_temp = 33.3
+
+def emergency_w1_restart():
+    GPIO.setmode(GPIO.BCM)
+    GPIO.setup(17, GPIO.OUT)
+    GPIO.output(17, GPIO.LOW)
+    time.sleep(30)
+    GPIO.output(17, GPIO.HIGH)
+    time.sleep(60)
 
 
 def check_db_exist():
@@ -65,6 +82,9 @@ def get_data_from_ds18b20(probe) :
     try:
         with open("/sys/bus/w1/devices/"+probe.constructor_id+"/w1_slave") as fichTemp:
             data = fichTemp.read()
+        first_line = data.split("\n")[0]
+        probe_state = first_line.split(" ")[11]
+        
         secondeLigne = data.split("\n")[1]
         temperatureData = secondeLigne.split(" ")[9]
         temperature = float(temperatureData[2:])
@@ -74,17 +94,13 @@ def get_data_from_ds18b20(probe) :
         # adding one digit after the point
         temperature = float(temperature)
         probe.temp = temperature
+        #log.log_file("DEBUG", "probe_state of {} is {} and temp is {}".format(probe.name, probe_state, probe.temp))
+        time.sleep(5)
         return temperature
     except FileNotFoundError as e:
     	# if the file is not found, the main possible cause could be an overloaded probe
-    	# this bunch of code will desactivate and slowly reactivate all the probes
-        log.log_file("Warning","probe not found but retrying....")
-        GPIO.setmode(GPIO.BCM)
-        GPIO.setup(17, GPIO.OUT)
-        GPIO.output(17, GPIO.LOW)
-        time.sleep(3)
-        GPIO.output(17, GPIO.HIGH)
-        time.sleep(10)
+        log.log_file("Warning","probe:{} not found but retrying later....".format(probe.name))
+        time.sleep(60)
     except Exception as e:
         log.log_file("Error", "oups! error in get_data_from_ds18b20 -> {}".format(e))
 
@@ -108,30 +124,23 @@ def set_temp_value():
                 now = time.time()
                 cursor = conn.cursor()
                 server_response = send_to_domoticz(probe)
-                cursor.execute("INSERT INTO temp_value (probe, value, time, server_response) VALUES ('{}','{}','{}','{}')".format(probe.name, temp, now, server_response))
-                #print(datetime.datetime.now(), ", probe: ",probe, " temp: ", temp, ", server_response: ", r)
+                cursor.execute("INSERT INTO temp_value (probe, value, time, server_response) VALUES ('{}','{}','{}','{}')".format(probe.name, probe.temp, now, server_response))
+                #print(datetime.datetime.now(), ", probe: ",probe, " temp: ", temp, ", server_response: ", server_response)
         #print("\n")
     except Exception as e:
         conn.rollback()
         log.log_file("Error", "oups! error in set_temp_value -> {}".format(e))
 
 
-# main code
+# main code 
 # i prefer to desactivate and reactivate the probes just in
 # case they were overloaded in a previous run
-print(check_db_exist())
-GPIO.setmode(GPIO.BCM)
-GPIO.setup(17, GPIO.OUT)
-GPIO.output(17, GPIO.LOW)
-time.sleep(3)
-GPIO.output(17, GPIO.HIGH)
-time.sleep(30)
-log.log_file("Info","mod chambre started ...")
-while True:
-    set_temp_value()
-    time.sleep(30)
-
-
+if __name__ == "__main__":
+    print(check_db_exist())
+    log.log_file("Info","mod chambre started ...")
+    while True:
+        set_temp_value()
+        time.sleep(60)
 
 
 
